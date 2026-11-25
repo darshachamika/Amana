@@ -199,5 +199,101 @@ app.post("/api/renewals/:policyId/process", (req, res) => {
 });
 app.get("/api/renewals/exceptions", (_req, res) => res.json(renewalExceptions));
 
+
+// Estimate review records are held in memory in this academic prototype.
+type EstimateLineItem = { id: string; description: string; quantity: number; unitPrice: number; lineTotal: number };
+type EstimateVersion = {
+  id: string; version: number; lineItems: EstimateLineItem[];
+  subtotal: number; taxRate: number; taxAmount: number; total: number; createdAt: string; createdBy: string;
+};
+type EstimateComment = {
+  id: string; estimateId: string; version: number; action: "comment" | "approve" | "amend" | "return";
+  comment: string; reviewer: string; createdAt: string;
+};
+type EstimateRecord = { id: string; claimReference: string; status: "pending" | "approved" | "amendment_requested" | "returned"; currentVersion: number; versions: EstimateVersion[]; comments: EstimateComment[] };
+const estimates = new Map<string, EstimateRecord>();
+const demoEstimateLines: EstimateLineItem[] = [
+  { id: randomUUID(), description: "Front bumper repair and paint", quantity: 1, unitPrice: 87500, lineTotal: 87500 },
+  { id: randomUUID(), description: "Headlamp assembly replacement", quantity: 1, unitPrice: 62000, lineTotal: 62000 },
+  { id: randomUUID(), description: "Front fender repair", quantity: 1, unitPrice: 24500, lineTotal: 24500 },
+  { id: randomUUID(), description: "Bumper clips and fittings", quantity: 1, unitPrice: 7500, lineTotal: 7500 },
+  { id: randomUUID(), description: "Paint and finishing", quantity: 1, unitPrice: 28000, lineTotal: 28000 },
+];
+const demoEstimateSubtotal = demoEstimateLines.reduce((sum, item) => sum + item.lineTotal, 0);
+const demoEstimateTax = Math.round(demoEstimateSubtotal * 0.18 * 100) / 100;
+const demoEstimate: EstimateRecord = {
+  id: randomUUID(), claimReference: "MC-2025-01487", status: "pending", currentVersion: 1,
+  versions: [{ id: randomUUID(), version: 1, lineItems: demoEstimateLines, subtotal: demoEstimateSubtotal, taxRate: 18, taxAmount: demoEstimateTax, total: demoEstimateSubtotal + demoEstimateTax, createdAt: new Date().toISOString(), createdBy: "City Auto Repairs" }],
+  comments: [],
+};
+estimates.set(demoEstimate.claimReference, demoEstimate);
+
+function estimateSnapshot(record: EstimateRecord) {
+  const current = record.versions.find((version) => version.version === record.currentVersion)!;
+  return { ...record, current };
+}
+
+app.get("/api/estimates/:claimReference", (req, res) => {
+  const record = estimates.get(req.params.claimReference);
+  if (!record) { res.status(404).json({ message: "Estimate not found for this claim." }); return; }
+  res.json(estimateSnapshot(record));
+});
+
+app.put("/api/estimates/:claimReference", (req, res) => {
+  const record = estimates.get(req.params.claimReference);
+  if (!record) { res.status(404).json({ message: "Estimate not found for this claim." }); return; }
+  if (!Array.isArray(req.body?.lineItems) || req.body.lineItems.length < 1 || req.body.lineItems.length > 50) {
+    res.status(400).json({ message: "An estimate must contain between 1 and 50 line items." }); return;
+  }
+  const lineItems: EstimateLineItem[] = [];
+  for (const item of req.body.lineItems as Array<Record<string, unknown>>) {
+    const description = typeof item.description === "string" ? item.description.trim() : "";
+    const quantity = Number(item.quantity);
+    const unitPrice = Number(item.unitPrice);
+    if (!description || description.length > 160 || !Number.isSafeInteger(quantity) || quantity < 1 ||
+        !Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 1000000000) {
+      res.status(400).json({ message: "Each line needs a description, a whole quantity above zero, and a valid non-negative unit price." }); return;
+    }
+    const lineTotal = Math.round(quantity * unitPrice * 100) / 100;
+    if (!Number.isFinite(lineTotal) || lineTotal > 1000000000) {
+      res.status(400).json({ message: "A line total is outside the supported range." }); return;
+    }
+    lineItems.push({ id: typeof item.id === "string" && item.id ? item.id : randomUUID(), description, quantity, unitPrice, lineTotal });
+  }
+  const subtotal = Math.round(lineItems.reduce((sum, item) => sum + item.lineTotal, 0) * 100) / 100;
+  const taxRate = 18;
+  const taxAmount = Math.round(subtotal * taxRate) / 100;
+  const version: EstimateVersion = {
+    id: randomUUID(), version: record.currentVersion + 1, lineItems, subtotal, taxRate, taxAmount,
+    total: Math.round((subtotal + taxAmount) * 100) / 100, createdAt: new Date().toISOString(), createdBy: "Sara Ahmed",
+  };
+  record.versions.push(version);
+  record.currentVersion = version.version;
+  record.status = "pending";
+  res.status(201).json(estimateSnapshot(record));
+});
+
+app.post("/api/estimates/:claimReference/comments", (req, res) => {
+  const record = estimates.get(req.params.claimReference);
+  if (!record) { res.status(404).json({ message: "Estimate not found for this claim." }); return; }
+  const action = req.body?.action;
+  const comment = typeof req.body?.comment === "string" ? req.body.comment.trim() : "";
+  if (!["comment", "approve", "amend", "return"].includes(action)) {
+    res.status(400).json({ message: "Choose a valid reviewer action." }); return;
+  }
+  if (!comment || comment.length > 500) {
+    res.status(400).json({ message: "Enter a reviewer comment of 1–500 characters." }); return;
+  }
+  const reviewerComment: EstimateComment = {
+    id: randomUUID(), estimateId: record.id, version: record.currentVersion,
+    action, comment, reviewer: "Sara Ahmed", createdAt: new Date().toISOString(),
+  };
+  record.comments.unshift(reviewerComment);
+  if (action === "approve") record.status = "approved";
+  else if (action === "amend") record.status = "amendment_requested";
+  else if (action === "return") record.status = "returned";
+  res.status(201).json({ comment: reviewerComment, estimate: estimateSnapshot(record) });
+});
+
 app.listen(3001, "127.0.0.1", () => console.log("Demo API running on http://127.0.0.1:3001"));
 
