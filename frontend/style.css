@@ -185,3 +185,10 @@ tbody tr:hover { background: #edf6ee; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
 
+
+.policy-history { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line, #dce5e2); }
+.policy-history h3 { margin: 0 0 .75rem; font-size: 1rem; }
+.policy-history ol { margin: 0; padding-left: 1.25rem; }
+.policy-history li { padding: .45rem 0; }
+.policy-history li small { display: block; color: var(--muted, #64748b); margin-top: .2rem; }
+.policy-correction { margin-top: 1rem; }

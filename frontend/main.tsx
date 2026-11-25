@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
-import { stageLabels, type Claim, type Policy, type QueueItem } from "../shared/contracts";
+import { stageLabels, type Claim, type Policy, type QueueItem, type PolicyReferenceHistory } from "../shared/contracts";
 import { Preview, previewPages, type PreviewPage } from "./previews";
 import { Badge, Facts, Header, Icon, Panel, Table } from "./ui";
 import "./style.css";
@@ -131,27 +131,63 @@ function policyFacts(policy: Policy): Array<[string, string]> {
 function PolicyLookup({ onSelect }: { onSelect: (policy: Policy) => void }) {
   const [reference, setReference] = useState("DEMO-MOTOR-001");
   const [policy, setPolicy] = useState<Policy>();
+  const [history, setHistory] = useState<PolicyReferenceHistory[]>([]);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [correctedReference, setCorrectedReference] = useState("");
 
   async function lookup(event: FormEvent) {
     event.preventDefault();
-    setError("");
-    setPolicy(undefined);
+    setError(""); setNotice(""); setPolicy(undefined); setHistory([]);
     setBusy(true);
-    try { setPolicy(await request<Policy>(`/policies?reference=${encodeURIComponent(reference)}`)); }
-    catch (reason) { setError((reason as Error).message); }
+    try {
+      const found = await request<Policy>(`/policies?reference=${encodeURIComponent(reference.trim())}`);
+      const records = await request<PolicyReferenceHistory[]>(`/policies/${encodeURIComponent(found.id)}/history`);
+      setPolicy(found); setHistory(records); setCorrectedReference(found.reference);
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function correctReference(event: FormEvent) {
+    event.preventDefault();
+    if (!policy || busy) return;
+    setError(""); setNotice(""); setBusy(true);
+    try {
+      const result = await request<{ policy: Policy; history: PolicyReferenceHistory[] }>(`/policies/${encodeURIComponent(policy.id)}/reference`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reference: correctedReference }),
+      });
+      setPolicy(result.policy); setHistory(result.history); setReference(result.policy.reference);
+      setCorrectedReference(result.policy.reference); setEditing(false);
+      setNotice("Policy reference corrected. The previous reference was saved in policy history.");
+    } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
   }
 
   return <>
-    <Header title="Policy Lookup" description="Search for a motor policy to view details or register a claim."/>
+    <Header title="Policy Lookup" description="Search for a motor policy, review its reference history, or correct a reference."/>
     <Panel title="Search Policy" icon="search"><form className="form-row" onSubmit={lookup}>
       <label>Search by<select><option>Policy Number</option></select></label>
-      <label className="grow">Policy Number<input required value={reference} disabled={busy} onChange={(event) => { setReference(event.target.value); setPolicy(undefined); setError(""); }}/></label>
+      <label className="grow">Policy Number<input required value={reference} disabled={busy} onChange={(event) => { setReference(event.target.value); setPolicy(undefined); setHistory([]); setError(""); setNotice(""); }}/></label>
       <button disabled={busy}><Icon name="search"/>{busy ? "Searching…" : "Search"}</button>
-    </form>{error && <p className="error" role="alert">{error}</p>}</Panel>
-    {policy && <Panel title={`Policy ${policy.reference}`} icon="shield" tone="tinted"><div className="inline-facts"><Facts rows={policyFacts(policy)}/></div><div className="actions"><button onClick={() => onSelect(policy)}>Continue to Register Claim <Icon name="arrow"/></button></div></Panel>}
+    </form>{error && <p className="error" role="alert">{error}</p>}{notice && <p className="notice" role="status">{notice}</p>}</Panel>
+    {policy && <Panel title={`Policy ${policy.reference}`} icon="shield" tone="tinted">
+      <div className="inline-facts"><Facts rows={policyFacts(policy)}/></div>
+      {!editing ? <div className="actions"><button className="secondary" onClick={() => { setCorrectedReference(policy.reference); setEditing(true); }}>Correct policy reference</button><button onClick={() => onSelect(policy)}>Continue to Register Claim <Icon name="arrow"/></button></div> :
+        <form className="form-row policy-correction" onSubmit={correctReference}>
+          <label className="grow">Corrected policy reference<input required minLength={3} maxLength={40} pattern="[A-Za-z0-9-]+" title="Use 3–40 letters, numbers, or hyphens." value={correctedReference} disabled={busy} onChange={(event) => setCorrectedReference(event.target.value)}/></label>
+          <button disabled={busy || correctedReference.trim().toUpperCase() === policy.reference}>{busy ? "Saving…" : "Save correction"}</button>
+          <button type="button" className="secondary" disabled={busy} onClick={() => { setEditing(false); setCorrectedReference(policy.reference); }}>Cancel</button>
+        </form>}
+      <section className="policy-history" aria-labelledby="policy-history-title">
+        <h3 id="policy-history-title">Policy Reference History</h3>
+        {history.length ? <ol>{history.map((entry) => <li key={entry.id}><strong>{entry.previousReference}</strong> <span>→</span> <strong>{entry.newReference}</strong><small>{new Date(entry.changedAt).toLocaleString()} · {entry.changedBy}</small></li>)}</ol> : <p className="muted">No reference corrections have been recorded.</p>}
+      </section>
+      {error && <p className="error" role="alert">{error}</p>}
+    </Panel>}
   </>;
 }
 

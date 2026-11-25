@@ -1,16 +1,17 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
-import { stageLabels, type Claim, type Policy } from "../shared/contracts";
+import { stageLabels, type Claim, type Policy, type PolicyReferenceHistory } from "../shared/contracts";
 
 const app = express();
 app.use(express.json({ limit: "16kb" }));
 
-const policy: Policy = {
+let policy: Policy = {
   id: "demo-policy",
   reference: "DEMO-MOTOR-001",
   policyPeriodId: "demo-period",
   referenceVersionId: "demo-reference-v1",
 };
+const policyReferenceHistory: PolicyReferenceHistory[] = [];
 const claims = new Map<string, Claim>();
 
 const registrations = new Map<string, Claim>();
@@ -28,6 +29,32 @@ app.get("/api/policies", (req, res) => {
     return;
   }
   res.json(policy);
+});
+
+app.get("/api/policies/:id/history", (req, res) => {
+  if (req.params.id !== policy.id) { res.status(404).json({ message: "Policy not found." }); return; }
+  res.json(policyReferenceHistory.filter((entry) => entry.policyId === policy.id));
+});
+
+app.patch("/api/policies/:id/reference", (req, res) => {
+  if (req.params.id !== policy.id) { res.status(404).json({ message: "Policy not found." }); return; }
+  const reference = typeof req.body?.reference === "string" ? req.body.reference.trim().toUpperCase() : "";
+  if (!/^[A-Z0-9-]{3,40}$/.test(reference)) {
+    res.status(400).json({ message: "Enter a policy reference using 3–40 letters, numbers, or hyphens." });
+    return;
+  }
+  if (reference === policy.reference) {
+    res.status(400).json({ message: "The corrected reference must be different from the current reference." });
+    return;
+  }
+  const previousReference = policy.reference;
+  const changedAt = new Date().toISOString();
+  policy = { ...policy, reference, referenceVersionId: `demo-reference-${randomUUID()}` };
+  policyReferenceHistory.unshift({
+    id: randomUUID(), policyId: policy.id, previousReference, newReference: reference,
+    changedAt, changedBy: "Sara Ahmed",
+  });
+  res.json({ policy, history: policyReferenceHistory.filter((entry) => entry.policyId === policy.id) });
 });
 
 app.post("/api/claims", (req, res) => {
