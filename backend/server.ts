@@ -210,7 +210,8 @@ type EstimateComment = {
   id: string; estimateId: string; version: number; action: "comment" | "approve" | "amend" | "return";
   comment: string; reviewer: string; createdAt: string;
 };
-type EstimateRecord = { id: string; claimReference: string; status: "pending" | "approved" | "amendment_requested" | "returned"; currentVersion: number; versions: EstimateVersion[]; comments: EstimateComment[] };
+type EstimateDecision = { id: string; estimateId: string; version: number; action: "approve" | "reject" | "request_changes"; reason: string; officer: string; timestamp: string };
+type EstimateRecord = { id: string; claimReference: string; status: "pending" | "approved" | "rejected" | "changes_requested"; currentVersion: number; versions: EstimateVersion[]; comments: EstimateComment[]; decisions: EstimateDecision[] };
 const estimates = new Map<string, EstimateRecord>();
 const demoEstimateLines: EstimateLineItem[] = [
   { id: randomUUID(), description: "Front bumper repair and paint", quantity: 1, unitPrice: 87500, lineTotal: 87500 },
@@ -225,6 +226,7 @@ const demoEstimate: EstimateRecord = {
   id: randomUUID(), claimReference: "MC-2025-01487", status: "pending", currentVersion: 1,
   versions: [{ id: randomUUID(), version: 1, lineItems: demoEstimateLines, subtotal: demoEstimateSubtotal, taxRate: 18, taxAmount: demoEstimateTax, total: demoEstimateSubtotal + demoEstimateTax, createdAt: new Date().toISOString(), createdBy: "City Auto Repairs" }],
   comments: [],
+  decisions: [],
 };
 estimates.set(demoEstimate.claimReference, demoEstimate);
 
@@ -271,6 +273,29 @@ app.put("/api/estimates/:claimReference", (req, res) => {
   record.currentVersion = version.version;
   record.status = "pending";
   res.status(201).json(estimateSnapshot(record));
+});
+
+app.post("/api/estimates/:claimReference/decisions", (req, res) => {
+  const record = estimates.get(req.params.claimReference);
+  if (!record) { res.status(404).json({ message: "Estimate not found for this claim." }); return; }
+  const { action, expectedVersion } = req.body ?? {};
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!["approve", "reject", "request_changes"].includes(action)) {
+    res.status(400).json({ message: "Choose approve, reject, or request changes." }); return;
+  }
+  if (!Number.isInteger(expectedVersion) || expectedVersion !== record.currentVersion) {
+    res.status(409).json({ message: "The estimate has changed since it was reviewed. Reload the latest version before recording a decision." }); return;
+  }
+  if (!reason || reason.length > 500) {
+    res.status(400).json({ message: "Enter a decision reason of 1–500 characters." }); return;
+  }
+  const decision: EstimateDecision = {
+    id: randomUUID(), estimateId: record.id, version: record.currentVersion,
+    action, reason, officer: "Sara Ahmed", timestamp: new Date().toISOString(),
+  };
+  record.decisions.unshift(decision);
+  record.status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "changes_requested";
+  res.status(201).json({ decision, estimate: estimateSnapshot(record) });
 });
 
 app.post("/api/estimates/:claimReference/comments", (req, res) => {
