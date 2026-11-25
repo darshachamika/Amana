@@ -99,5 +99,78 @@ app.get("/api/claims/:id", (req, res) => {
   res.json(claim);
 });
 
+
+type RenewalPolicy = {
+  id: string; reference: string; insured: string; vehicle: string;
+  periodId: string; periodStart: string; periodEnd: string;
+  status: "active" | "cancelled"; outstandingBalance: boolean;
+  openClaims: number; coverage: string; sumInsured: number; annualContribution: number;
+};
+type RenewalException = { id: string; policyId: string; policyReference: string; reason: string; recordedAt: string; status: "open" };
+type RenewalRecord = { id: string; policyId: string; policyReference: string; previousPeriodId: string; newPeriodId: string; startDate: string; endDate: string; createdAt: string };
+const renewalPolicies: RenewalPolicy[] = [
+  { id: "renewal-policy-1", reference: "MT-10045872", insured: "Mohamed Rizan", vehicle: "Toyota Corolla (CBD-4821)", periodId: "period-10045872-2026", periodStart: "2025-12-01", periodEnd: "2026-11-30", status: "active", outstandingBalance: false, openClaims: 0, coverage: "Comprehensive", sumInsured: 5500000, annualContribution: 52800 },
+  { id: "renewal-policy-2", reference: "MT-10045873", insured: "Nimali Perera", vehicle: "Honda Fit (CAB-1234)", periodId: "period-10045873-2026", periodStart: "2025-12-10", periodEnd: "2026-12-09", status: "active", outstandingBalance: true, openClaims: 0, coverage: "Third Party", sumInsured: 3200000, annualContribution: 38500 },
+  { id: "renewal-policy-3", reference: "MT-10045874", insured: "Kasun Silva", vehicle: "Suzuki Alto (CBB-7788)", periodId: "period-10045874-2026", periodStart: "2025-11-01", periodEnd: "2026-10-31", status: "active", outstandingBalance: false, openClaims: 1, coverage: "Comprehensive", sumInsured: 4100000, annualContribution: 44200 },
+];
+const renewalExceptions: RenewalException[] = [];
+const renewalRecords = new Map<string, RenewalRecord>();
+const renewalRequests = new Map<string, RenewalRecord>();
+function renewalEligibility(policy: RenewalPolicy) {
+  const reasons: string[] = [];
+  if (policy.status !== "active") reasons.push("Policy is not active.");
+  if (policy.outstandingBalance) reasons.push("Outstanding contribution balance must be settled.");
+  if (policy.openClaims > 0) reasons.push("Open claims must be resolved before renewal.");
+  return { eligible: reasons.length === 0, reasons };
+}
+app.get("/api/renewals", (req, res) => {
+  const days = Math.min(365, Math.max(0, Number(req.query.withinDays ?? 60)));
+  if (!Number.isFinite(days)) { res.status(400).json({ message: "withinDays must be a number." }); return; }
+  const today = new Date().toISOString().slice(0, 10);
+  const cutoff = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+  const items = renewalPolicies.filter((p) => p.periodEnd >= today && p.periodEnd <= cutoff)
+    .map((p) => ({ ...p, ...renewalEligibility(p), renewed: renewalRecords.has(p.id) }));
+  res.json({ items, exceptions: renewalExceptions });
+});
+app.post("/api/renewals/:policyId/exceptions", (req, res) => {
+  const policy = renewalPolicies.find((p) => p.id === req.params.policyId);
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!policy) { res.status(404).json({ message: "Policy not found." }); return; }
+  if (!reason || reason.length > 500) { res.status(400).json({ message: "Enter an exception reason of 1–500 characters." }); return; }
+  const exception: RenewalException = { id: randomUUID(), policyId: policy.id, policyReference: policy.reference, reason, recordedAt: new Date().toISOString(), status: "open" };
+  renewalExceptions.unshift(exception);
+  res.status(201).json(exception);
+});
+app.post("/api/renewals/:policyId/process", (req, res) => {
+  const policy = renewalPolicies.find((p) => p.id === req.params.policyId);
+  if (!policy) { res.status(404).json({ message: "Policy not found." }); return; }
+  const key = req.get("Idempotency-Key");
+  if (!key || !/^[A-Za-z0-9_-]{1,128}$/.test(key)) { res.status(400).json({ message: "Supply a valid renewal request key." }); return; }
+  const priorRequest = renewalRequests.get(key);
+  if (priorRequest) {
+    if (priorRequest.policyId !== policy.id) { res.status(409).json({ message: "This request key belongs to another policy." }); return; }
+    res.json({ renewal: priorRequest, created: false }); return;
+  }
+  const existing = renewalRecords.get(policy.id);
+  if (existing) { renewalRequests.set(key, existing); res.json({ renewal: existing, created: false }); return; }
+  const eligibility = renewalEligibility(policy);
+  if (!eligibility.eligible) {
+    const reason = eligibility.reasons.join(" ");
+    renewalExceptions.unshift({ id: randomUUID(), policyId: policy.id, policyReference: policy.reference, reason, recordedAt: new Date().toISOString(), status: "open" });
+    res.status(409).json({ message: "Policy is not eligible for renewal.", reasons: eligibility.reasons });
+    return;
+  }
+  const start = new Date(policy.periodEnd + "T00:00:00Z");
+  start.setUTCDate(start.getUTCDate() + 1);
+  const end = new Date(start);
+  end.setUTCFullYear(end.getUTCFullYear() + 1);
+  end.setUTCDate(end.getUTCDate() - 1);
+  const renewal: RenewalRecord = { id: randomUUID(), policyId: policy.id, policyReference: policy.reference, previousPeriodId: policy.periodId, newPeriodId: randomUUID(), startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10), createdAt: new Date().toISOString() };
+  renewalRecords.set(policy.id, renewal);
+  renewalRequests.set(key, renewal);
+  res.status(201).json({ renewal, created: true });
+});
+app.get("/api/renewals/exceptions", (_req, res) => res.json(renewalExceptions));
+
 app.listen(3001, "127.0.0.1", () => console.log("Demo API running on http://127.0.0.1:3001"));
 
