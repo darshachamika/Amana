@@ -64,9 +64,12 @@ Start the API and web app in separate terminals.
 | API | `npm run dev:api` | `http://localhost:3001` |
 | Web | `npm run dev:web` | Usually `http://localhost:5173` |
 
-1. Open the URL printed by Vite and search for `DEMO-MOTOR-001`.
-2. Enter an incident description and register the claim.
-3. In the **Staff work queue**, select **Awaiting documents** and open the new claim number.
+1. Open the URL printed by Vite and sign in with the prefilled demo credentials.
+2. From **Staff Home**, open **Policy Lookup**, search for `DEMO-MOTOR-001`, and continue to **Register Claim**.
+3. Enter a sample incident description and register the claim. The app opens the new claim's details.
+4. In the **Staff Work Queue**, select **Awaiting documents** and check that the new claim appears.
+
+Staff Sign In simulates a session in the browser. Document Verification, Estimate Review, Claim Decision, Policy Renewal, and Reports & Audit are interactive previews with synthetic data. The portal's [vehicle photo is by Vlad Grebenyev on Unsplash](https://unsplash.com/photos/a-car-driving-on-a-road-E2hj4Q712Hs).
 
 The demo runs without environment variables. Restarting the API clears registered claims. The planned PostgreSQL connection setting is documented in [the environment example](.env.example).
 

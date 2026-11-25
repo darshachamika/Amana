@@ -1,0 +1,25 @@
+{
+  "name": "amana-motor-workflow",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:api": "tsx backend/server.ts",
+    "dev:web": "vite --config frontend/vite.config.ts",
+    "check": "tsc --noEmit",
+    "build": "npm run check && vite build --config frontend/vite.config.ts"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0",
+    "typescript": "^5.8.0",
+    "tsx": "^4.19.0",
+    "@types/express": "^5.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/node": "^24.0.0"
+  }
+}
