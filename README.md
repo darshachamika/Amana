@@ -33,7 +33,7 @@ Staff can look up a synthetic motor policy, register a claim against its current
 
 | Available in the prototype | Planned |
 | --- | --- |
-| Policy lookup, claim registration, stage filtering, and claim details | Policy renewals, document verification, estimate review, and claim decisions |
+| Policy lookup, claim registration, stage filtering, and claim details | Policy renewals, document checklist and synthetic upload versioning, document verification, estimate review, and claim decisions |
 | In-memory synthetic policy and claim records | PostgreSQL persistence, staff access controls, audit history, reporting, and recovery |
 
 ## Claim workflow
@@ -71,7 +71,7 @@ Start the API and web app in separate terminals.
 
 Staff Sign In simulates a session in the browser. Document Verification, Estimate Review, Claim Decision, Policy Renewal, and Reports & Audit are interactive previews with synthetic data. The portal's [vehicle photo is by Vlad Grebenyev on Unsplash](https://unsplash.com/photos/a-car-driving-on-a-road-E2hj4Q712Hs).
 
-The demo runs without environment variables. Restarting the API clears registered claims. The planned PostgreSQL connection setting is documented in [the environment example](.env.example).
+The demo runs without environment variables. Restarting the API clears registered claims and document histories. Document Verification uses synthetic filenames and records versioned upload metadata and verification outcomes; no binary files are stored. A claim moves to Ready for estimate only after every required current document version is verified. The planned PostgreSQL connection setting is documented in [the environment example](.env.example).
 
 Run `npm run check` for TypeScript validation and `npm run build` for the production frontend build.
 

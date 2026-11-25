@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Facts, Panel, Table } from "./ui";
 import { EstimateReview } from "./estimate";
+import { DocumentVerification } from "./documents";
 
 export const previewPages = {
   documents: ["Document Verification", "Review the documents submitted for this claim."],
@@ -125,7 +126,8 @@ export function Preview({ page }: { page: PreviewPage }) {
 
   return <>
     <p className="preview-note"><strong>Module preview</strong> · Synthetic data</p>
-    {page === "documents" && <>
+    {page === "documents" && <DocumentVerification/>}
+    {false && page === "documents" && <>
       <Panel title="Claim MC-2025-01487" tone="tinted"><div className="inline-facts"><Facts rows={claim}/></div></Panel>
       <Panel title="Submitted Documents (4)"><Table columns={["#", "Document", "File name", "Submitted on", "Review status"]}>
         {["Claim Form", "Identity Card", "Vehicle Registration", "Accident Photos"].map((name, index) => <tr key={name}><td>{index + 1}</td><td>{name}</td><td>{name.toLowerCase().replaceAll(" ", "_")}.{index === 3 ? "zip" : "pdf"}</td><td>15 Jan 2025, 2:17 PM</td><td><span className={`badge ${index < 2 ? "decision_recorded" : "awaiting_documents"}`}>{index < 2 ? "Verified" : "Pending review"}</span></td></tr>)}
