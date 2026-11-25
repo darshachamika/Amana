@@ -156,20 +156,25 @@ function PolicyLookup({ onSelect }: { onSelect: (policy: Policy) => void }) {
 }
 
 function Register({ policy, onRegistered }: { policy?: Policy; onRegistered: (claim: Claim) => void }) {
+  const [incidentDate, setIncidentDate] = useState("");
+  const attempt = useRef<{ body: string; key: string } | null>(null);
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   async function register(event: FormEvent) {
     event.preventDefault();
-    if (!policy || busy) return;
+    if (!policy || busy || !incidentDate || !description.trim()) return;
     setBusy(true);
     setError("");
     try {
+      const body = JSON.stringify({ policyId: policy.id, policyPeriodId: policy.policyPeriodId,
+        referenceVersionId: policy.referenceVersionId, incidentDate, incidentDescription: description.trim() });
+      if (attempt.current?.body !== body) attempt.current = { body, key: crypto.randomUUID() };
       const claim = await request<Claim>("/claims", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ policyId: policy.id, policyPeriodId: policy.policyPeriodId, referenceVersionId: policy.referenceVersionId, incidentDescription: description }),
+        headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.current.key },
+        body,
       });
       onRegistered(claim);
     } catch (reason) { setError((reason as Error).message); }
@@ -182,11 +187,11 @@ function Register({ policy, onRegistered }: { policy?: Policy; onRegistered: (cl
     {policy ? <form onSubmit={register}>
       <Panel title="Verified Policy" icon="check" tone="tinted"><div className="inline-facts"><Facts rows={policyFacts(policy)}/></div></Panel>
       <Panel title="Claim Details"><div className="columns incident">
-        <label>Incident Date (preview)<input type="date" aria-describedby="date-note"/><small id="date-note">Preview field · date is not saved.</small></label>
-        <label>Incident Description<textarea required maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)}/><small>{description.length}/1000</small></label>
+        <label>Incident Date<input required disabled={busy} type="date" value={incidentDate} onChange={(event) => setIncidentDate(event.target.value)}/></label>
+        <label>Incident Description<textarea disabled={busy} required maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)}/><small>{description.length}/1000</small></label>
       </div></Panel>
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="actions"><a className="button secondary" href="#policy">Cancel</a><button disabled={busy || !description.trim()}>{busy ? "Registering…" : "Register Claim"}</button></div>
+      <div className="actions"><a className="button secondary" href="#policy">Cancel</a><button disabled={busy || !incidentDate || !description.trim()}>{busy ? "Registering…" : "Register Claim"}</button></div>
     </form> : <Panel title="Select a Policy" icon="shield"><p>Look up a policy number to verify the policy before registering a claim.</p><a className="button" href="#policy"><Icon name="search"/> Find Policy</a></Panel>}
   </>;
 }
@@ -202,7 +207,7 @@ function ClaimDetails({ id, created }: { id: string; created: string }) {
     {claim && <>
       {created === id && <p role="status" className="notice">{claim.claimNumber} registered.</p>}
       <Panel title={`Claim ${claim.claimNumber}`} icon="shield" tone="tinted"><Badge stage={claim.stage}/></Panel>
-      <div className="columns"><Panel title="Incident Information"><Facts rows={[[ "Description", claim.incidentDescription ], ["Assigned officer", claim.assignedOfficer ?? "Unassigned"], ["Next follow-up", claim.nextFollowUp ?? "—"]]}/></Panel>
+      <div className="columns"><Panel title="Incident Information"><Facts rows={[["Incident date", claim.incidentDate], [ "Description", claim.incidentDescription ], ["Assigned officer", claim.assignedOfficer ?? "Unassigned"], ["Next follow-up", claim.nextFollowUp ?? "—"]]}/></Panel>
         <Panel title="Policy Information" icon="shield"><Facts rows={[[ "Policy Number", claim.policyReference ], ["Effective dates", "Unavailable in prototype"]]}/></Panel></div>
       <Panel title="Claim Timeline" icon="clock"><ol className="timeline"><li><strong>Claim registered</strong></li><li><strong>{stageLabels[claim.stage]}</strong>{claim.pendingReason && <span>{claim.pendingReason}</span>}</li></ol><p className="muted">Current stage from the API. Timestamped history is planned.</p></Panel>
     </>}
