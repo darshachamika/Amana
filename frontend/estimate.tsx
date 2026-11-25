@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import type { EstimateComment, EstimateLineItem, EstimateRecord } from "../shared/contracts";
+import type { EstimateComment, EstimateDecision, EstimateLineItem, EstimateRecord } from "../shared/contracts";
 import { Facts, Panel, Table } from "./ui";
 
 const claimReference = "MC-2025-01487";
@@ -11,7 +11,8 @@ export function EstimateReview() {
   const [estimate, setEstimate] = useState<EstimateRecord>();
   const [lines, setLines] = useState<EstimateLineItem[]>([]);
   const [comment, setComment] = useState("");
-  const [action, setAction] = useState<EstimateComment["action"]>("approve");
+  const [decisionAction, setDecisionAction] = useState<EstimateDecision["action"]>("approve");
+  const [decisionReason, setDecisionReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -56,17 +57,33 @@ export function EstimateReview() {
       setError(reason instanceof Error ? reason.message : "Could not save estimate.");
     } finally { setBusy(false); }
   }
-  async function submitReview(event: FormEvent) {
+  async function submitDecision(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/estimates/${encodeURIComponent(claimReference)}/decisions`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: decisionAction, reason: decisionReason, expectedVersion: estimate?.currentVersion }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message ?? "Could not record decision.");
+      setEstimate(data.estimate); setDecisionReason("");
+      setNotice(`Decision recorded against estimate version ${data.decision.version}.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not record decision.");
+    } finally { setBusy(false); }
+  }
+
+  async function submitComment(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch(`/api/estimates/${encodeURIComponent(claimReference)}/comments`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, comment }),
+        body: JSON.stringify({ action: "comment", comment }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message ?? "Could not save reviewer comment.");
+      if (!response.ok) throw new Error(data.message ?? "Could not save comment.");
       setEstimate(data.estimate); setComment("");
-      setNotice("Reviewer action and comment saved.");
+      setNotice("Reviewer comment saved.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not save reviewer comment.");
     } finally { setBusy(false); }
@@ -101,14 +118,27 @@ export function EstimateReview() {
       </Panel>
     </form>
     <div className="columns">
-      <Panel title="Reviewer Action">
-        <form className="stack" onSubmit={submitReview}>
-          <label>Action<select value={action} onChange={(event) => setAction(event.target.value as EstimateComment["action"])}>
-            <option value="approve">Approve estimate</option><option value="amend">Request amendment</option>
-            <option value="return">Return for clarification</option><option value="comment">Add comment only</option>
+      <Panel title="Estimate Decision" icon="check">
+        <form className="stack" onSubmit={submitDecision}>
+          <label>Decision<select value={decisionAction} onChange={(event) => setDecisionAction(event.target.value as EstimateDecision["action"])}>
+            <option value="approve">Approve estimate</option>
+            <option value="reject">Reject estimate</option>
+            <option value="request_changes">Request changes</option>
           </select></label>
-          <label>Reviewer comment<textarea required maxLength={500} value={comment} onChange={(event) => setComment(event.target.value)}/></label>
-          <button disabled={busy || !comment.trim()}>{busy ? "Saving…" : "Save reviewer action"}</button>
+          <label>Reason<textarea required maxLength={500} value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} placeholder="Explain the reason for this decision…"/></label>
+          <p className="muted">This decision will be linked to estimate version {estimate.currentVersion} and the signed-in demo officer.</p>
+          <button disabled={busy || !decisionReason.trim()}>{busy ? "Recording…" : "Record decision"}</button>
+        </form>
+      </Panel>
+      <Panel title={`Decision Audit Trail (${estimate.decisions.length})`}>
+        {estimate.decisions.length ? <Table columns={["Timestamp", "Officer", "Reviewed version", "Decision", "Reason"]}>
+          {estimate.decisions.map((item) => <tr key={item.id}><td>{new Date(item.timestamp).toLocaleString()}</td><td>{item.officer}</td><td>Version {item.version}</td><td>{item.action.replaceAll("_", " ")}</td><td>{item.reason}</td></tr>)}
+        </Table> : <p className="muted">No estimate decisions recorded yet.</p>}
+      </Panel>
+      <Panel title="Reviewer Comment">
+        <form className="stack" onSubmit={submitComment}>
+          <label>Comment<textarea required maxLength={500} value={comment} onChange={(event) => setComment(event.target.value)}/></label>
+          <button className="secondary" disabled={busy || !comment.trim()}>{busy ? "Saving…" : "Add comment"}</button>
         </form>
       </Panel>
       <Panel title={`Estimate Versions (${estimate.versions.length})`}>

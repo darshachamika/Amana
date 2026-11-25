@@ -69,12 +69,23 @@ export interface EstimateComment {
   createdAt: string;
 }
 
+export interface EstimateDecision {
+  id: string;
+  estimateId: string;
+  version: number;
+  action: "approve" | "reject" | "request_changes";
+  reason: string;
+  officer: string;
+  timestamp: string;
+}
+
 export interface EstimateRecord {
   id: string;
   claimReference: string;
-  status: "pending" | "approved" | "amendment_requested" | "returned";
+  status: "pending" | "approved" | "rejected" | "changes_requested";
   currentVersion: number;
   versions: EstimateVersion[];
   comments: EstimateComment[];
+  decisions: EstimateDecision[];
   current: EstimateVersion;
 }
