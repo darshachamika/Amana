@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title">
+  <title id="title">Amana Motor Workflow project mark</title>
+  <rect width="160" height="160" rx="32" fill="#073e37"/>
+  <rect x="10" y="10" width="140" height="140" rx="25" fill="none" stroke="#468c7e"/>
+  <path d="M80 26 120 41v35c0 25-16 43-40 55-24-12-40-30-40-55V41z" fill="#d1fae5"/>
+  <path d="m56 76 6-15a6 6 0 0 1 6-4h24a6 6 0 0 1 6 4l6 15m-48 0h48v18H56zm7 18v7m34-7v7m-32-16h5m20 0h5" fill="none" stroke="#073e37" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
