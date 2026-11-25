@@ -13,6 +13,14 @@ const policy: Policy = {
 };
 const claims = new Map<string, Claim>();
 
+const registrations = new Map<string, Claim>();
+
+function validIncidentDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000")) return false;
+  const parsed = new Date(value + "T00:00:00Z");
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 app.get("/api/policies", (req, res) => {
   const reference = req.query.reference;
   if (typeof reference !== "string" || reference.trim().toUpperCase() !== policy.reference) {
@@ -23,7 +31,7 @@ app.get("/api/policies", (req, res) => {
 });
 
 app.post("/api/claims", (req, res) => {
-  const { policyId, policyPeriodId, referenceVersionId, incidentDescription } = req.body ?? {};
+  const { policyId, policyPeriodId, referenceVersionId, incidentDate, incidentDescription } = req.body ?? {};
   if (policyId !== policy.id || policyPeriodId !== policy.policyPeriodId ||
       referenceVersionId !== policy.referenceVersionId) {
     res.status(400).json({ message: "Select a valid policy reference and period." });
@@ -32,6 +40,25 @@ app.post("/api/claims", (req, res) => {
   if (typeof incidentDescription !== "string" || !incidentDescription.trim() ||
       incidentDescription.trim().length > 1000) {
     res.status(400).json({ message: "Enter an incident description of 1–1000 characters." });
+    return;
+  }
+  if (!validIncidentDate(incidentDate)) {
+    res.status(400).json({ message: "Enter a valid incident date." });
+    return;
+  }
+  const key = req.get("Idempotency-Key");
+  if (!key || !/^[A-Za-z0-9_-]{1,128}$/.test(key)) {
+    res.status(400).json({ message: "Supply a valid registration request key." });
+    return;
+  }
+  const previous = registrations.get(key);
+  if (previous) {
+    if (previous.incidentDate !== incidentDate || previous.incidentDescription !== incidentDescription.trim() ||
+        previous.policyReference !== policy.reference) {
+      res.status(409).json({ message: "This request key already identifies a different registration." });
+      return;
+    }
+    res.json(previous);
     return;
   }
   const id = randomUUID();
@@ -43,9 +70,11 @@ app.post("/api/claims", (req, res) => {
     assignedOfficer: null,
     pendingReason: "Supporting documents required",
     nextFollowUp: null,
+    incidentDate,
     incidentDescription: incidentDescription.trim(),
   };
   claims.set(id, claim);
+  registrations.set(key, claim);
   res.status(201).json(claim);
 });
 
@@ -57,7 +86,7 @@ app.get("/api/claims", (req, res) => {
   }
   const items = [...claims.values()].reverse()
     .filter((claim) => stage === undefined || claim.stage === stage)
-    .map(({ incidentDescription, ...item }) => item);
+    .map(({ incidentDate, incidentDescription, ...item }) => item);
   res.json(items);
 });
 

@@ -25,6 +25,7 @@ export interface QueueItem {
 }
 
 export interface Claim extends QueueItem {
+  incidentDate: string;
   incidentDescription: string;
 }
 
