@@ -14,3 +14,17 @@ See [shared contracts](../shared/contracts.ts) for response fields and proposed 
 
 Production integration needs authenticated staff roles, persisted claim and policy linkage, duplicate-request protection, and a queue sourced from the same committed state as document verification. Hemachandra owns staff access controls.
 
+## Policy renewal workflow
+
+| Request | Result |
+|---|---|
+| GET /api/renewals?withinDays=60 | Expiring policies with eligibility reasons and renewal status |
+| POST /api/renewals/:policyId/exceptions | Record a staff exception using a 1–500 character `reason` |
+| POST /api/renewals/:policyId/process | Process an eligible renewal; requires an `Idempotency-Key` header |
+| GET /api/renewals/exceptions | List recorded exceptions |
+
+The demo eligibility rules require an active policy, no outstanding contribution balance, and no open claims. Ineligible renewal attempts return 409 and automatically record the eligibility reasons as an exception. Staff can also record a manually supplied exception reason.
+
+Renewal processing is idempotent per policy: the first successful request creates one new policy-period record, while a matching request retry or a later request with a different key returns the existing record rather than creating another period. A key reused for a different policy returns 409. The new period begins the day after the expiring period and ends one day before the same date in the following year.
+
+**Prototype limitation:** policies, renewal periods, idempotency keys, and exceptions are held in memory and reset when the API restarts. For production, enforce one renewal per source period with a database unique constraint and perform the renewal insert and idempotency record in one transaction.
