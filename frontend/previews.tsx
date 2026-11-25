@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Facts, Panel, Table } from "./ui";
+import { EstimateReview } from "./estimate";
 
 export const previewPages = {
   documents: ["Document Verification", "Review the documents submitted for this claim."],
@@ -111,7 +112,6 @@ function RenewalPanel() {
 
 export function Preview({ page }: { page: PreviewPage }) {
   const [message, setMessage] = useState("");
-  const [estimateAction, setEstimateAction] = useState("Approve estimate");
   const [renewalQuery, setRenewalQuery] = useState("MT-10045872");
   const [matched, setMatched] = useState(true);
   const [tab, setTab] = useState("Reports");
@@ -132,18 +132,7 @@ export function Preview({ page }: { page: PreviewPage }) {
       </Table></Panel>
       <div className="actions"><button className="secondary" onClick={() => result("Requesting documents")}>Request More Documents</button><button onClick={() => result("Verifying documents")}>Verify Documents</button></div>
     </>}
-    {page === "estimate" && <>
-      <Panel title="Claim MC-2025-01487"><div className="inline-facts"><Facts rows={claim}/></div></Panel>
-      <div className="columns wide-first">
-        <Panel title="Repair Estimate (Garage Submission)"><Table columns={["#", "Description", "Qty", "Unit price", "Line total"]}>
-          {repairs.map(([name, value], index) => <tr key={name}><td>{index + 1}</td><td>{name}</td><td>1</td><td>{currency(value)}</td><td>{currency(value)}</td></tr>)}
-        </Table><Facts rows={[[ "Subtotal", currency(subtotal)], ["VAT (18%)", currency(total - subtotal)]]}/><div className="total"><strong>Total Estimate</strong><strong>{currency(total)}</strong></div></Panel>
-        <Panel title="Estimate Actions"><form className="stack" onSubmit={(event) => { event.preventDefault(); result(estimateAction); }}>
-          {["Approve estimate", "Amend estimate", "Return for clarification"].map((action) => <button className={estimateAction === action ? "selected" : "secondary"} key={action} type="button" aria-pressed={estimateAction === action} onClick={() => setEstimateAction(action)}>{action}</button>)}
-          <label>Review Notes (optional)<textarea maxLength={500}/></label><button>{estimateAction === "Approve estimate" ? "Approve & Continue" : estimateAction}</button>
-        </form></Panel>
-      </div>
-    </>}
+    {page === "estimate" && <EstimateReview/>}
     {page === "decision" && <div className="columns">
       <Panel title="Claim Summary"><Facts rows={[...claim.slice(0, 4), ["Date of loss", "14 Jan 2025"], ["Estimated amount", currency(total)], ["Coverage", "Comprehensive"], ["Status", <span className="badge awaiting_documents">Decision pending</span>]]}/></Panel>
       <Panel title="Decision Details" icon="check"><form className="stack" onSubmit={(event) => { event.preventDefault(); result("Recording the decision"); }}>
