@@ -2,7 +2,9 @@
 
 | Request | Result |
 |---|---|
-| GET /api/policies?reference=DEMO-MOTOR-001 | Exact reference lookup |
+| GET /api/policies?reference=DEMO-MOTOR-001 | Exact current-reference lookup |
+| PATCH /api/policies/:id/reference | Correct a policy reference; returns the updated policy and its reference history |
+| GET /api/policies/:id/history | List previous and current policy-reference changes, newest first |
 | POST /api/claims | Register using `policyId`, `policyPeriodId`, `referenceVersionId`, `incidentDate` (YYYY-MM-DD) and `incidentDescription` |
 | GET /api/claims | Queue items |
 | GET /api/claims?stage=awaiting_documents | Filtered queue |
@@ -28,3 +30,6 @@ The demo eligibility rules require an active policy, no outstanding contribution
 Renewal processing is idempotent per policy: the first successful request creates one new policy-period record, while a matching request retry or a later request with a different key returns the existing record rather than creating another period. A key reused for a different policy returns 409. The new period begins the day after the expiring period and ends one day before the same date in the following year.
 
 **Prototype limitation:** policies, renewal periods, idempotency keys, and exceptions are held in memory and reset when the API restarts. For production, enforce one renewal per source period with a database unique constraint and perform the renewal insert and idempotency record in one transaction.
+
+
+Policy reference corrections are validated as 3–40 uppercase letters, numbers, or hyphens. Each successful correction creates a history entry containing the previous reference, new reference, timestamp, and staff actor. The demo history is held in memory and resets when the API restarts; production must persist corrections and history together in a database transaction and derive the actor from the authenticated staff session.

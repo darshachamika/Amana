@@ -29,3 +29,12 @@ export interface Claim extends QueueItem {
   incidentDescription: string;
 }
 
+
+export interface PolicyReferenceHistory {
+  id: string;
+  policyId: string;
+  previousReference: string;
+  newReference: string;
+  changedAt: string;
+  changedBy: string;
+}
