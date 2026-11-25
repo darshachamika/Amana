@@ -26,6 +26,89 @@ const months = ["Aug 2024", "Sep 2024", "Oct 2024", "Nov 2024", "Dec 2024", "Jan
 const received = [112, 129, 141, 168, 176, 205];
 const settled = [68, 79, 93, 113, 133, 161];
 
+
+type RenewalItem = {
+  id: string; reference: string; insured: string; vehicle: string; periodId: string;
+  periodStart: string; periodEnd: string; status: string; outstandingBalance: boolean;
+  openClaims: number; coverage: string; sumInsured: number; annualContribution: number;
+  eligible: boolean; reasons: string[]; renewed: boolean;
+};
+type RenewalRecord = { id: string; policyReference: string; previousPeriodId: string; newPeriodId: string; startDate: string; endDate: string; createdAt: string };
+type RenewalException = { id: string; policyReference: string; reason: string; recordedAt: string; status: string };
+function RenewalPanel() {
+  const [items, setItems] = useState<RenewalItem[]>([]);
+  const [exceptions, setExceptions] = useState<RenewalException[]>([]);
+  const [days, setDays] = useState(60);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notes, setNotes] = useState<Record<string,string>>({});
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  const [renewals, setRenewals] = useState<Record<string,RenewalRecord>>({});
+  const [keys] = useState(() => new Map<string,string>());
+  const money = (value:number) => new Intl.NumberFormat("en-LK",{style:"currency",currency:"LKR",maximumFractionDigits:0}).format(value);
+  async function load() {
+    setLoading(true); setError("");
+    try {
+      const [result, exceptionRows] = await Promise.all([
+        fetch(`/api/renewals?withinDays=${days}`).then(async r => {const d=await r.json();if(!r.ok)throw new Error(d.message);return d;}),
+        fetch("/api/renewals/exceptions").then(async r => {const d=await r.json();if(!r.ok)throw new Error(d.message);return d;})
+      ]);
+      setItems(result.items); setExceptions(exceptionRows);
+    } catch(e) { setError(e instanceof Error ? e.message : "Unable to load renewals."); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { void load(); }, [days]);
+  async function process(policy:RenewalItem) {
+    setBusy(policy.id); setMessage(""); setError("");
+    const key=keys.get(policy.id) ?? crypto.randomUUID(); keys.set(policy.id,key);
+    try {
+      const response=await fetch(`/api/renewals/${policy.id}/process`,{method:"POST",headers:{"Idempotency-Key":key}});
+      const data=await response.json();
+      if(!response.ok) throw new Error(data.message ?? "Renewal could not be processed.");
+      setRenewals(old=>({...old,[policy.id]:data.renewal}));
+      setMessage(data.created ? `Renewal created for ${policy.reference}.` : `Existing renewal returned for ${policy.reference}; no duplicate period was created.`);
+      await load();
+    } catch(e) { setError(e instanceof Error ? e.message : "Renewal failed."); }
+    finally { setBusy(""); }
+  }
+  async function recordException(policy:RenewalItem) {
+    setBusy(policy.id); setError(""); setMessage("");
+    try {
+      const response=await fetch(`/api/renewals/${policy.id}/exceptions`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:notes[policy.id] ?? ""})});
+      const data=await response.json(); if(!response.ok)throw new Error(data.message);
+      setNotes(old=>({...old,[policy.id]:""})); setMessage(`Exception recorded for ${policy.reference}.`); await load();
+    } catch(e) {setError(e instanceof Error ? e.message : "Could not record exception.");}
+    finally {setBusy("");}
+  }
+  return <>
+    <p className="preview-note"><strong>Renewal operations</strong> · Synthetic demonstration records</p>
+    <Panel title="Expiring policy search" icon="calendar"><div className="form-row">
+      <label>Expiring within<select value={days} onChange={e=>setDays(Number(e.target.value))}><option value={30}>30 days</option><option value={60}>60 days</option><option value={90}>90 days</option><option value={180}>180 days</option><option value={365}>1 year</option></select></label>
+      <button className="secondary" type="button" onClick={()=>void load()}>Refresh</button>
+    </div><p className="muted">Eligibility checks: active policy, no outstanding contribution balance, and no open claims.</p></Panel>
+    {error && <p role="alert" className="error">{error}</p>}
+    {message && <p role="status" className="notice">{message}</p>}
+    {loading ? <p role="status">Loading expiring policies…</p> : items.length===0 ? <Panel title="No expiring policies" icon="check"><p>No policies expire within the selected period.</p></Panel> : items.map(policy=>{
+      const renewal=renewals[policy.id];
+      return <Panel key={policy.id} title={policy.reference} icon="shield" tone={policy.eligible ? "tinted" : ""}>
+        <div className="inline-facts"><Facts rows={[
+          ["Insured / vehicle",`${policy.insured} · ${policy.vehicle}`],["Current policy period",`${policy.periodStart} – ${policy.periodEnd}`],
+          ["Coverage",policy.coverage],["Sum insured",money(policy.sumInsured)],["Annual contribution",money(policy.annualContribution)],
+          ["Eligibility",policy.eligible ? "Eligible" : "Exception required"],["Renewal status",renewal ? "Renewed" : policy.renewed ? "Already renewed" : "Not renewed"]
+        ]}/></div>
+        {policy.reasons.length>0 && <ul className="error">{policy.reasons.map(reason=><li key={reason}>{reason}</li>)}</ul>}
+        {renewal && <p className="notice">New period {renewal.newPeriodId}: {renewal.startDate} – {renewal.endDate}</p>}
+        <div className="stack">
+          {!policy.eligible && <><label>Exception reason<textarea aria-label={`Exception reason for ${policy.reference}`} maxLength={500} value={notes[policy.id] ?? ""} onChange={e=>setNotes(old=>({...old,[policy.id]:e.target.value}))}/></label><button className="secondary" disabled={busy===policy.id || !(notes[policy.id] ?? "").trim()} onClick={()=>void recordException(policy)}>Record exception</button></>}
+          {policy.eligible && <button disabled={busy===policy.id} onClick={()=>void process(policy)}>{busy===policy.id ? "Processing…" : policy.renewed ? "View existing renewal / retry safely" : "Process renewal"}</button>}
+        </div>
+      </Panel>;
+    })}
+    <Panel title={`Recorded exceptions (${exceptions.length})`} icon="clock">{exceptions.length ? <Table columns={["Policy","Reason","Recorded","Status"]}>{exceptions.map(item=><tr key={item.id}><td>{item.policyReference}</td><td>{item.reason}</td><td>{new Date(item.recordedAt).toLocaleString()}</td><td>{item.status}</td></tr>)}</Table> : <p className="muted">No exceptions recorded.</p>}</Panel>
+  </>;
+}
+
 export function Preview({ page }: { page: PreviewPage }) {
   const [message, setMessage] = useState("");
   const [estimateAction, setEstimateAction] = useState("Approve estimate");
@@ -68,17 +151,7 @@ export function Preview({ page }: { page: PreviewPage }) {
         <label>Internal Reason<textarea required maxLength={500}/></label><button>Record Decision</button>
       </form></Panel>
     </div>}
-    {page === "renewal" && <>
-      <section className="panel"><form className="form-row" onSubmit={(event) => { event.preventDefault(); setMatched(["mt-10045872", "mohamed rizan"].includes(renewalQuery.trim().toLowerCase())); setMessage(""); }}>
-        <label>Policy No. or Insured Name<input required value={renewalQuery} onChange={(event) => setRenewalQuery(event.target.value)}/></label><button>Find Policy</button>
-      </form></section>
-      {matched ? <>
-        <div className="columns">{[false, true].map((proposed) => <Panel key={String(proposed)} title={proposed ? "Proposed Renewal Term" : "Current Term (Expiring)"} icon="calendar" tone={proposed ? "tinted" : ""}>
-          <Facts rows={[[ "Policy No.", proposed ? "MT-10045872-R1" : "MT-10045872"], ["Insured", "Mohamed Rizan"], ["Vehicle", "Toyota Corolla (CBD-4821)"], ["Period", proposed ? "01 Feb 2025 – 31 Jan 2026" : "01 Feb 2024 – 31 Jan 2025"], ["Coverage", "Comprehensive"], ["Sum insured", currency(proposed ? 5500000 : 5000000)], ["Annual contribution", currency(proposed ? 52800 : 48750)]]}/>
-        </Panel>)}</div>
-        <form className="form-row" onSubmit={(event) => { event.preventDefault(); result("Processing the renewal"); }}><label>Renewal Notes (optional)<textarea maxLength={500}/></label><button>Process Renewal</button></form>
-      </> : <p role="status">No sample policy matched. Try MT-10045872.</p>}
-    </>}
+    {page === "renewal" && <RenewalPanel/>}
     {page === "reports" && <>
       <div className="filters" aria-label="Report views">{["Reports", "Audit History"].map((label) => <button key={label} className={tab === label ? "selected" : "secondary"} aria-pressed={tab === label} onClick={() => { setTab(label); setMessage(""); }}>{label}</button>)}</div>
       {tab === "Reports" && <div className="columns wide-first"><Panel title="Claims Trend" icon="chart">
