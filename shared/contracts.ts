@@ -38,3 +38,43 @@ export interface PolicyReferenceHistory {
   changedAt: string;
   changedBy: string;
 }
+
+export interface EstimateLineItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+export interface EstimateVersion {
+  id: string;
+  version: number;
+  lineItems: EstimateLineItem[];
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  total: number;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface EstimateComment {
+  id: string;
+  estimateId: string;
+  version: number;
+  action: "comment" | "approve" | "amend" | "return";
+  comment: string;
+  reviewer: string;
+  createdAt: string;
+}
+
+export interface EstimateRecord {
+  id: string;
+  claimReference: string;
+  status: "pending" | "approved" | "amendment_requested" | "returned";
+  currentVersion: number;
+  versions: EstimateVersion[];
+  comments: EstimateComment[];
+  current: EstimateVersion;
+}
