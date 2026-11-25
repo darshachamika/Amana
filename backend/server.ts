@@ -320,5 +320,82 @@ app.post("/api/estimates/:claimReference/comments", (req, res) => {
   res.status(201).json({ comment: reviewerComment, estimate: estimateSnapshot(record) });
 });
 
+
+// Document checklist, synthetic upload versions, and verification outcomes.
+type DocumentVersion = { id: string; version: number; fileName: string; uploadedAt: string; uploadedBy: string; verification: "pending" | "verified" | "rejected"; verifiedAt: string | null; verifiedBy: string | null; outcome: string | null };
+type ClaimDocument = { id: string; name: string; required: boolean; versions: DocumentVersion[]; currentVersion: number };
+type DocumentSet = { claimId: string; documents: ClaimDocument[] };
+const requiredDocumentNames = ["Completed claim form", "National identity card", "Vehicle registration", "Accident photographs"];
+const documentSets = new Map<string, DocumentSet>();
+function getDocumentSet(claimId: string): DocumentSet | undefined {
+  const claim = claims.get(claimId);
+  if (!claim) return undefined;
+  let set = documentSets.get(claimId);
+  if (!set) {
+    set = { claimId, documents: requiredDocumentNames.map((name, index) => {
+      const id = `document-${index + 1}`;
+      const fileName = ["claim-form.pdf", "identity-card.pdf", "vehicle-registration.pdf", "accident-photos.zip"][index];
+      return { id, name, required: true, currentVersion: 1, versions: [{
+        id: randomUUID(), version: 1, fileName, uploadedAt: new Date().toISOString(), uploadedBy: "Synthetic demo upload",
+        verification: "pending", verifiedAt: null, verifiedBy: null, outcome: null,
+      }] };
+    }) };
+    documentSets.set(claimId, set);
+  }
+  return set;
+}
+function updateClaimDocumentStage(claimId: string, set: DocumentSet) {
+  const claim = claims.get(claimId);
+  if (!claim) return;
+  const allRequiredVerified = set.documents.filter((doc) => doc.required).every((doc) =>
+    doc.versions.find((version) => version.version === doc.currentVersion)?.verification === "verified");
+  if (allRequiredVerified) {
+    claim.stage = "ready_for_estimate";
+    claim.pendingReason = null;
+  } else {
+    claim.stage = "awaiting_documents";
+    claim.pendingReason = "Required documents must be uploaded and verified";
+  }
+}
+app.get("/api/documents/:claimId", (req, res) => {
+  const set = getDocumentSet(req.params.claimId);
+  if (!set) { res.status(404).json({ message: "Claim not found." }); return; }
+  updateClaimDocumentStage(req.params.claimId, set);
+  res.json({ ...set, claim: claims.get(req.params.claimId) });
+});
+app.post("/api/documents/:claimId/:documentId/uploads", (req, res) => {
+  const set = getDocumentSet(req.params.claimId);
+  const document = set?.documents.find((item) => item.id === req.params.documentId);
+  const fileName = typeof req.body?.fileName === "string" ? req.body.fileName.trim() : "";
+  if (!set || !document) { res.status(404).json({ message: "Claim document not found." }); return; }
+  if (!fileName || fileName.length > 120 || !/^[\w .()-]+\.(pdf|jpg|jpeg|png|zip)$/i.test(fileName)) {
+    res.status(400).json({ message: "Enter a valid synthetic file name ending in PDF, JPG, PNG, or ZIP." }); return;
+  }
+  const version: DocumentVersion = {
+    id: randomUUID(), version: document.currentVersion + 1, fileName, uploadedAt: new Date().toISOString(),
+    uploadedBy: "Sara Ahmed", verification: "pending", verifiedAt: null, verifiedBy: null, outcome: null,
+  };
+  document.versions.push(version);
+  document.currentVersion = version.version;
+  updateClaimDocumentStage(req.params.claimId, set);
+  res.status(201).json({ ...set, claim: claims.get(req.params.claimId) });
+});
+app.post("/api/documents/:claimId/:documentId/verification", (req, res) => {
+  const set = getDocumentSet(req.params.claimId);
+  const document = set?.documents.find((item) => item.id === req.params.documentId);
+  const outcome = req.body?.outcome;
+  const note = typeof req.body?.note === "string" ? req.body.note.trim() : "";
+  if (!set || !document) { res.status(404).json({ message: "Claim document not found." }); return; }
+  if (!["verified", "rejected"].includes(outcome)) { res.status(400).json({ message: "Choose verified or rejected." }); return; }
+  if (!note || note.length > 500) { res.status(400).json({ message: "Enter a verification note of 1–500 characters." }); return; }
+  const version = document.versions.find((item) => item.version === document.currentVersion)!;
+  version.verification = outcome;
+  version.verifiedAt = new Date().toISOString();
+  version.verifiedBy = "Sara Ahmed";
+  version.outcome = note;
+  updateClaimDocumentStage(req.params.claimId, set);
+  res.status(201).json({ ...set, claim: claims.get(req.params.claimId) });
+});
+
 app.listen(3001, "127.0.0.1", () => console.log("Demo API running on http://127.0.0.1:3001"));
 
